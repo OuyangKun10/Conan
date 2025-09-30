@@ -11,6 +11,6 @@ The multi-step reasoning MLLM that turns frames into foresight.
 | ------------- | ----------- | ------------- | -------- |
 | MMR-VBench    | 30.1        | **34.4**      | **+4.3** |
 | VideoHolmes   | 28.5        | **36.0**      | **+7.5** |
-| VRBench       | 66.4        | 64.6          | −1.8     |
+| VRBench       | 66.4        | 65.1          | −1.3     |
 | VCRBench (MC) | 46.5        | **46.9**      | **+0.4** |
 | VideoMMMU     | 45.7        | **46.6**      | **+0.9** |
