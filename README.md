@@ -1,12 +1,12 @@
-⚔️ Conan
+# ⚔️ Conan
 
 The multi-step reasoning MLLM that turns frames into foresight.
 
-📅 Breaking News
+## 📅 Breaking News
 
 🚀 09/30/2025 — [Conan-SFT](https://huggingface.co/RUBBISHLIKE/Conan-SFT) has landed on Hugging Face!
 
-🔥 Arena Scores
+## 🔥 Arena Scores
 
 | Dataset       | Qwen2.5VL7B | **Conan-SFT** | Δ        |
 | ------------- | ----------- | ------------- | -------- |
