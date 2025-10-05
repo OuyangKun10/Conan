@@ -4,7 +4,7 @@ The multi-step reasoning MLLM that turns frames into foresight.
 
 ## 📅 Breaking News
 
-🚀 10/02/2025 — We releae the evaluation results of Conan (2000 iters).
+🚀 10/02/2025 — We releae the evaluation results of [Conan](https://huggingface.co/RUBBISHLIKE/Conan) (2000 iters).
 
 🚀 09/30/2025 — [Conan-SFT](https://huggingface.co/RUBBISHLIKE/Conan-SFT) has landed on Hugging Face!
 
