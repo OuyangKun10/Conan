@@ -1,5 +1,5 @@
 """
-mmr-v.py 
+videomme.py 
 """
 import os
 import re
@@ -12,37 +12,16 @@ import numpy as np
 from utils import *
 from prompt_temp import *
 # ========== 1. 路径配置 ==========
-QA_FNAME   = "MMR-VBench/data/test-00000-of-00001.parquet"
-VIDEO_DIR  = "MMR-VBench"   
-PROMPT_TEMP = """
-[[INSTRUCTIONS]]
-Please select the best answer to the following multiple-choice question based on the video. 
-Only one option is the most accurate answer in relation to the question and the video.
-
-What is the correct answer to this question [[QUESTION]]
-Options:
-[[OPTIONS]]
-
-[[END OF INSTRUCTIONS]]
-[[QUESTION]]
+QA_FNAME   = "Video-MME/videomme/test-00000-of-00001.parquet"
+VIDEO_DIR  = "Video-MME/data"   
+PROMPT_TEMP=""""
 {question}
-[[END OF QUESTION]]
-[[OPTIONS]]
 {options}
-[[END OF OPTIONS]]
-[[OUTPUT FORMAT]]
-Format your answer as follows:
-
-Give the final correct option number in the following format: \"[[A]]\" or \"[[B]]\" or \"[[C]]\" or \"[[D]]\" ...
-[[END OF OUTPUT FORMAT]]
+Please answer the question with an optoin letter.
+The answer is:
 """
 def get_paths() -> Tuple[str, str]:
-    """
-    返回 (qa_path, video_root_path)
-    方便其它 benchmark 复用 main.py
-    """
     return  QA_FNAME, VIDEO_DIR
-# 放在 videomme.py 末尾即可
 def load_data() -> list[dict]:
     """
     统一字段后返回任务列表
@@ -57,18 +36,14 @@ def load_data() -> list[dict]:
     raw = load_qa(qa_path)     
     out = []
     for item in raw:
-        video_id=item["video"]
+        video_id=item["videoID"]
         out.append({
-            "video_id": video_id,           
-            "video_path": os.path.join(video_dir, video_id),
-            "videoType": item["videoType"],
+            "video_name": video_id,           
+            "video_path": os.path.join(video_dir, f"{video_id}.mp4"),
             "question":   item["question"],
             "options":    item["options"],
-            "answer":     str(item["correctAnswer"]),
-            "duration":   item.get("duration"),
-            "abilityType_L2": item["abilityType_L2"],
-            "abilityType_L3": item["abilityType_L3"],
-            "question_idx": item["question_idx"]
+            "answer":     str(item["answer"]),
+            "duration":   item.get("duration")
         })
     return out
 # ========== 2. prompt & 单条评测 ==========
@@ -119,7 +94,6 @@ def eval_gt(response,gt):
     if response == None:
         return 0
     response = extract_characters(response)
-    gt = extract_characters(gt)
     if response == None:
         return 0
     else: return response.lower()==gt.lower()
@@ -131,7 +105,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
     if mode == "uniform":
         vr, fps = video_io.load_video(video_path)
         idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-        frames = video_io.save_video_frames(video_path, idxs, "frames/mmr-v")
+        frames = video_io.save_video_frames(video_path, idxs,"frames/videomme")
         imgs, _ = zip(*frames)
         prompt = build_prompt(question, mode, options,False,False) 
         message=construct_message(prompt,list(imgs))
@@ -149,7 +123,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
             prompt = build_prompt(question, mode, options,True,False) 
             vr, fps = video_io.load_video(video_path)
             idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-            frames = video_io.save_video_frames(video_path, idxs, "frames/mmr-v")
+            frames = video_io.save_video_frames(video_path, idxs, "frames/videomme")
         elif step_idx == 2:
             prompt = build_prompt(question, mode, options,False,True)
         else:
@@ -157,21 +131,19 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
-        # try:
         response, history = model.chat(message,history=history)
-        # except:
-        #     response="None"
-        #     break
+
         # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
             if replay_idxs:
-                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/mmr-v")
+                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/videomme")
             else:break
         else: break
         step_idx=step_idx+1
         if step_idx>=max_steps:break
+
     pred = response.strip()
     return pred, prompt, history, eval_gt(pred, gt)
 def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
@@ -180,14 +152,13 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
     """
     return {
         "video": ex["video_path"],
+        "duration": ex.get("duration"),   
         "question": ex["question"],
         "prompt": prompt,
         "messages": messages,
         "gt": str(ex["answer"]),
         "pred": pred,
-        "correct": correct,
-        "abilityType_L2": ex["abilityType_L2"],
-        "abilityType_L3": ex["abilityType_L3"],
+        "correct": correct
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
     """
@@ -202,65 +173,39 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
         for line in f:
             all_results.append(json.loads(line))
     failed_res=[]
-    bad_counts={}
     try:
         with open(run_dir / "log.jsonl", encoding="utf-8") as f:
             for line in f:
                 failed_res.append(json.loads(line))
     except:
         print("No generation failed samples")
+    bad_counts={}
     total = len(all_results)
-    # 按 reasoning type 分组
-    implicit_buckets = {"Metaphor Understanding": [], "Theme Understanding": [], "Emotion Recognition": [], "Comment Matching": [], "Implicit Symbol": []}
-    explicit_buckets = {"Causal Reasoning": [], "Sequential Structure Reasoning": [], "Counterintuitive Reasoning": [], "Cross-modal Creative Transfer": [], "Video Type and Intent": []}
-    unknown_bucket: List[Dict[str, Any]] = [] 
+    overall_acc = np.mean([r["correct"] for r in all_results])
+
+    # 按 duration 分组
+    buckets = {"short": [], "medium": [], "long": []}
     no_response=0
     for r in all_results:
-        if "<answer>" in r['pred']:
-            response=extract_answer(r['pred'])
-        else:
-            response=r['pred']
+        duration = r.get("duration", "unknown")
+        response=r['pred']
+        if "<answer>" in response:
+            response=extract_answer(response)
         if response!='None':
             response = extract_characters(response)
             if response is None:
                 no_response=no_response+1
-        rea_type = r.get("abilityType_L2", "unknown")
-        if rea_type in implicit_buckets:
-            implicit_buckets[rea_type].append(r)
-        elif rea_type in explicit_buckets:
-            explicit_buckets[rea_type].append(r)
+        if duration in buckets:
+            buckets[duration].append(r)
     bad_counts={"inference error":len(failed_res),"retrieval error":no_response}
-    overall_acc = np.mean([r["correct"] for r in all_results])
-    # 1. 计算每个子类型的准确率
-    implicit_subtype_accuracy: Dict[str, float] = {}
-    for k, v in implicit_buckets.items():
-        if v:
-            implicit_subtype_accuracy[k] = np.mean([r["correct"] for r in v])
-        else:
-            implicit_subtype_accuracy[k] = None 
-    implicit_all_results = [r for k in implicit_buckets for r in implicit_buckets[k]]
-    implicit_category_accuracy = np.mean([r["correct"] for r in implicit_all_results]) if implicit_all_results else None
-    implicit_category_samples = len(implicit_all_results)
-    implicit_subtype_accuracy["overall"]=implicit_category_accuracy
-    implicit_subtype_accuracy["total_samples"]=implicit_category_samples
+    bucket_acc = {k: (np.mean([r["correct"] for r in v]) if v else None)
+                  for k, v in buckets.items()}
 
-    explicit_subtype_accuracy: Dict[str, float] = {}
-    for k, v in explicit_buckets.items():
-        if v:
-            explicit_subtype_accuracy[k] = np.mean([r["correct"] for r in v])
-        else:
-            explicit_subtype_accuracy[k] = None 
-    explicit_all_results = [r for k in explicit_buckets for r in explicit_buckets[k]]
-    explicit_category_accuracy = np.mean([r["correct"] for r in explicit_all_results]) if explicit_all_results else None
-    explicit_category_samples = len(explicit_all_results)
-    explicit_subtype_accuracy["overall"]=explicit_category_accuracy
-    explicit_subtype_accuracy["total_samples"]=explicit_category_samples
     summary = {
         "overall_accuracy": float(overall_acc),
         "total_samples": total,
         "bad_counts": bad_counts,
-        "implicit_subtype_accuracy": implicit_subtype_accuracy,
-        "explicit_subtype_accuracy": explicit_subtype_accuracy,
+        "bucket_accuracy": bucket_acc
     }
 
     # 同时保存 summary.json
