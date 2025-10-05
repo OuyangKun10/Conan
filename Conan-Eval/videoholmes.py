@@ -1,5 +1,5 @@
 """
-mmr-v.py 
+videoholmes.py 
 """
 import os
 import re
@@ -12,8 +12,39 @@ import numpy as np
 from utils import *
 from prompt_temp import *
 # ========== 1. 路径配置 ==========
-QA_FNAME   = "MMR-VBench/data/test-00000-of-00001.parquet"
-VIDEO_DIR  = "MMR-VBench"   
+QA_FNAME   = "Video-Holmes/test_Video-Holmes.json"
+VIDEO_DIR  = "Video-Holmes/videos"   
+ANALYZE_PROMPT ="""
+[[INSTRUCTIONS]]
+Please select the best answer to the following multiple-choice question based on the video. 
+Only one option is the most accurate answer in relation to the question and the video.
+Each frame is labeled with a timestamp in the format HH:MM:SS.
+
+What is the correct answer to this question [[QUESTION]]
+Options:
+[[OPTIONS]]
+
+[[END OF INSTRUCTIONS]]
+[[QUESTION]]
+{question}
+[[END OF QUESTION]]
+[[OPTIONS]]
+{options}
+[[END OF OPTIONS]]
+[[OUTPUT FORMAT]]
+
+Task:
+
+1. Decide whether the **provided frames contain enough information** to answer the question.
+2. Output **exactly** in the following XML-like tags:\n<replay>True/False</replay>\n<clip>…</clip>\n<answer>…</answer>
+
+Rules:
+
+• If the frames are sufficient → set <replay>False</replay>, leave <clip></clip> empty, and place the correct **option letter** inside <answer></answer>.
+• If the frames are **not** sufficient → set <replay>True</replay>, list the required clip(s) inside <clip></clip> (e.g., 00:05:20-00:06:30).
+Do **not** add any extra text outside these tags.
+"""
+
 PROMPT_TEMP = """
 [[INSTRUCTIONS]]
 Please select the best answer to the following multiple-choice question based on the video. 
@@ -33,7 +64,7 @@ Options:
 [[OUTPUT FORMAT]]
 Format your answer as follows:
 
-Give the final correct option number in the following format: \"[[A]]\" or \"[[B]]\" or \"[[C]]\" or \"[[D]]\" ...
+Give the final correct option letter in the following format: A, B, C, D, E, F, etc.
 [[END OF OUTPUT FORMAT]]
 """
 def get_paths() -> Tuple[str, str]:
@@ -42,33 +73,21 @@ def get_paths() -> Tuple[str, str]:
     方便其它 benchmark 复用 main.py
     """
     return  QA_FNAME, VIDEO_DIR
-# 放在 videomme.py 末尾即可
 def load_data() -> list[dict]:
-    """
-    统一字段后返回任务列表
-    字段:
-        video_name  : str   原始文件名
-        video_path  : str   完整绝对路径
-        question    : str
-        answer      : str   ground truth
-        duration    : float 秒(可选)
-    """
     qa_path, video_dir = get_paths()
     raw = load_qa(qa_path)     
     out = []
     for item in raw:
-        video_id=item["video"]
+        video_id=item["video ID"]
         out.append({
+            "Question ID": item["Question ID"],
             "video_id": video_id,           
-            "video_path": os.path.join(video_dir, video_id),
-            "videoType": item["videoType"],
-            "question":   item["question"],
-            "options":    item["options"],
-            "answer":     str(item["correctAnswer"]),
-            "duration":   item.get("duration"),
-            "abilityType_L2": item["abilityType_L2"],
-            "abilityType_L3": item["abilityType_L3"],
-            "question_idx": item["question_idx"]
+            "video_path": os.path.join(video_dir, f"{video_id}.mp4"),
+            "task": item["Question Type"],
+            "question": item["Question"],
+            "options": ', '.join([f"{key}: {value}" for key, value in item["Options"].items()]),
+            "answer": item["Answer"],
+            "duration": item.get("duration"),
         })
     return out
 # ========== 2. prompt & 单条评测 ==========
@@ -131,7 +150,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
     if mode == "uniform":
         vr, fps = video_io.load_video(video_path)
         idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-        frames = video_io.save_video_frames(video_path, idxs, "frames/mmr-v")
+        frames = video_io.save_video_frames(video_path, idxs, "frames/videoholmes")
         imgs, _ = zip(*frames)
         prompt = build_prompt(question, mode, options,False,False) 
         message=construct_message(prompt,list(imgs))
@@ -149,7 +168,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
             prompt = build_prompt(question, mode, options,True,False) 
             vr, fps = video_io.load_video(video_path)
             idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-            frames = video_io.save_video_frames(video_path, idxs, "frames/mmr-v")
+            frames = video_io.save_video_frames(video_path, idxs, "frames/videoholmes")
         elif step_idx == 2:
             prompt = build_prompt(question, mode, options,False,True)
         else:
@@ -157,21 +176,18 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
-        # try:
         response, history = model.chat(message,history=history)
-        # except:
-        #     response="None"
-        #     break
-        # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
             if replay_idxs:
-                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/mmr-v")
+                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/videoholmes")
             else:break
         else: break
         step_idx=step_idx+1
         if step_idx>=max_steps:break
+        
+
     pred = response.strip()
     return pred, prompt, history, eval_gt(pred, gt)
 def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
@@ -179,41 +195,37 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
     构造需要保存的字段，benchmark 可自由增删
     """
     return {
-        "video": ex["video_path"],
+        "Question ID": ex["Question ID"],
+        "video_path": ex["video_path"],
         "question": ex["question"],
+        "options": ex["options"],
         "prompt": prompt,
         "messages": messages,
         "gt": str(ex["answer"]),
         "pred": pred,
         "correct": correct,
-        "abilityType_L2": ex["abilityType_L2"],
-        "abilityType_L3": ex["abilityType_L3"],
+        "task": ex["task"],
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
     """
-    读取所有 results_all.jsonl 并返回统计字典
-    结构：
-        overall_accuracy
-        total_samples
-        bucket_accuracy
+    读取 results_all.jsonl，按 task 分组统计准确率与样本数
     """
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
             all_results.append(json.loads(line))
     failed_res=[]
-    bad_counts={}
     try:
         with open(run_dir / "log.jsonl", encoding="utf-8") as f:
             for line in f:
                 failed_res.append(json.loads(line))
     except:
         print("No generation failed samples")
+    bad_counts={}
     total = len(all_results)
-    # 按 reasoning type 分组
-    implicit_buckets = {"Metaphor Understanding": [], "Theme Understanding": [], "Emotion Recognition": [], "Comment Matching": [], "Implicit Symbol": []}
-    explicit_buckets = {"Causal Reasoning": [], "Sequential Structure Reasoning": [], "Counterintuitive Reasoning": [], "Cross-modal Creative Transfer": [], "Video Type and Intent": []}
-    unknown_bucket: List[Dict[str, Any]] = [] 
+    overall_acc = float(np.mean([r["correct"] for r in all_results]))
+
+    task_buckets: Dict[str, List[Dict[str, Any]]] = {}
     no_response=0
     for r in all_results:
         if "<answer>" in r['pred']:
@@ -224,46 +236,23 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
             response = extract_characters(response)
             if response is None:
                 no_response=no_response+1
-        rea_type = r.get("abilityType_L2", "unknown")
-        if rea_type in implicit_buckets:
-            implicit_buckets[rea_type].append(r)
-        elif rea_type in explicit_buckets:
-            explicit_buckets[rea_type].append(r)
+        task = r.get("task", "unknown_task")
+        task_buckets.setdefault(task, []).append(r)
     bad_counts={"inference error":len(failed_res),"retrieval error":no_response}
-    overall_acc = np.mean([r["correct"] for r in all_results])
-    # 1. 计算每个子类型的准确率
-    implicit_subtype_accuracy: Dict[str, float] = {}
-    for k, v in implicit_buckets.items():
-        if v:
-            implicit_subtype_accuracy[k] = np.mean([r["correct"] for r in v])
-        else:
-            implicit_subtype_accuracy[k] = None 
-    implicit_all_results = [r for k in implicit_buckets for r in implicit_buckets[k]]
-    implicit_category_accuracy = np.mean([r["correct"] for r in implicit_all_results]) if implicit_all_results else None
-    implicit_category_samples = len(implicit_all_results)
-    implicit_subtype_accuracy["overall"]=implicit_category_accuracy
-    implicit_subtype_accuracy["total_samples"]=implicit_category_samples
+    task_accuracy: Dict[str, float] = {}
+    task_samples: Dict[str, int] = {}
+    for task, items in task_buckets.items():
+        task_accuracy[task] = float(np.mean([r["correct"] for r in items])) if items else 0.0
+        task_samples[task] = len(items)
 
-    explicit_subtype_accuracy: Dict[str, float] = {}
-    for k, v in explicit_buckets.items():
-        if v:
-            explicit_subtype_accuracy[k] = np.mean([r["correct"] for r in v])
-        else:
-            explicit_subtype_accuracy[k] = None 
-    explicit_all_results = [r for k in explicit_buckets for r in explicit_buckets[k]]
-    explicit_category_accuracy = np.mean([r["correct"] for r in explicit_all_results]) if explicit_all_results else None
-    explicit_category_samples = len(explicit_all_results)
-    explicit_subtype_accuracy["overall"]=explicit_category_accuracy
-    explicit_subtype_accuracy["total_samples"]=explicit_category_samples
     summary = {
-        "overall_accuracy": float(overall_acc),
+        "overall_accuracy": overall_acc,
         "total_samples": total,
         "bad_counts": bad_counts,
-        "implicit_subtype_accuracy": implicit_subtype_accuracy,
-        "explicit_subtype_accuracy": explicit_subtype_accuracy,
+        "task_accuracy": task_accuracy,
+        "task_total_samples": task_samples,
     }
 
-    # 同时保存 summary.json
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
