@@ -41,4 +41,4 @@ Joint Identification–Reasoning–Action RLVR
 
 **Usage**
 
-    ```bash run.sh
+    bash run.sh
