@@ -1,5 +1,5 @@
 """
-vrbench.py 
+mlvu.py 
 """
 import os
 import re
@@ -12,100 +12,73 @@ import numpy as np
 from utils import *
 from prompt_temp import *
 # ========== 1. 路径配置 ==========
-PROMPT_TEMP_mc=""""
-Question:\n{question}
-Options:\n{options}
+QA_FNAME   = "MVLU/MLVU/json"
+VIDEO_DIR  = "MVLU/MLVU/video"   
+PROMPT_TEMP=""""
+Question: {question}
+Options: {options}
 Please answer the question with an optoin letter.
 The answer is:
 """
-PROMPT_TEMP_free=""""
-Question:\n{question}
-The answer is:
-"""
-VIDEO_DIR  = "VCR-Bench/v1/videos"
-QA_FNAME   = "VCR-Bench/v1/videos/meta_info_video.json"   
-def get_paths() -> List[Tuple[str, str]]:
-    """
-    返回 (qa_path, video_root_path)
-    """
-    
-    return  VIDEO_DIR,QA_FNAME
+def get_paths() -> Tuple[str, str]:
+    return  QA_FNAME, VIDEO_DIR
+Json_list=['1_plotQA','2_needle','3_ego','4_count','5_order','6_anomaly_reco','7_topic_reasoning','8_sub_scene','9_summary']
 def load_data() -> list[dict]:
-    VIDEO_DIR,QA_FNAME= get_paths()
+    qa_path, video_dir = get_paths()
     out = []
-    raw = load_qa(QA_FNAME)   
-    for item in raw:
-        video_id=os.path.basename(item["video_path"])
-        video_path=item["video_path"]
-        if item["multiple-choice"]:
+    q_index=0
+    for json_name in Json_list:
+        raw = load_qa(os.path.join(qa_path,f"{json_name}.json"))     
+        for item in raw:
+            video_id=item["video"]
+            options=""
+            if item.get("candidates",None) is None:
+                continue
+            for i, candidate in enumerate(item["candidates"]):
+                    choice = chr(ord("A") + i)
+                    options += f"{choice}. {candidate}\n"
+                    if item['answer']==candidate:
+                        answer_opt=choice
             out.append({
-                "question_id": item['id'],
-                "video_id": video_id,           
-                "video_path": f"{VIDEO_DIR}/{video_path}",
-                "task": item["dimension"],
-                "question_type": "multiple-choice" if item["multiple-choice"] else "free-form",
-                "question": item["question"],
-                "options": item["choices"],
-                "answer": item["answer"],
-                "duration": item["duration"]
+                "question_id": q_index,
+                "video_name": video_id,           
+                "video_path": os.path.join(video_dir, json_name, video_id),
+                "question":   item["question"],
+                "options":    options,
+                "answer":     answer_opt,
+                "task":       item['question_type'],
+                "duration":   item.get("duration")
             })
+            q_index=q_index+1
     return out
 # ========== 2. prompt & 单条评测 ==========
-def build_prompt(question: str, mode: str, options: str, init_flag: bool, final_flag: bool) -> str:
+def build_prompt(question: str, mode: str, options: List[str], init_flag: bool,final_flag: bool) -> str:
     if mode == "uniform":
-        if options:
-            return PROMPT_TEMP_mc.format(
-                question=question,
-                options=options,
-            )
-        else:
-            return PROMPT_TEMP_free.format(
-                question=question,
-            )
-
+        return PROMPT_TEMP.format(
+            question=question,
+            options=options,
+        )
     elif mode == "step":
         if init_flag:
-            if options:
-                return Prompt_temp_init_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_init_gen.format(
-                question=question,
-                )
-
+            return Prompt_temp_init_mc.format(
+            question=question,
+            options=options,
+        )
         elif final_flag:
-            if options:
-                return Prompt_temp_final_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_final_gen.format(
-                question=question,
-                )
-        else:
-            if options:
-                return Prompt_temp_round_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_round_gen.format(
-                question=question,
-                )
-    elif mode == "cot":
-        if options:
-            return Prompt_temp_cot_mc.format(
+            return Prompt_temp_final_mc.format(
             question=question,
             options=options,
         )
         else:
-            return Prompt_temp_cot_gen.format(
-                question=question,
-            )
-        
+            return Prompt_temp_round_mc.format(
+            question=question,
+            options=options,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
+            question=question,
+            options=options,
+        )
 def construct_message(prompt,frames,timestamps=[],insert_timestamp=False):
     content=[]
     if insert_timestamp:
@@ -131,72 +104,67 @@ def eval_gt(response,gt):
     if response == None:
         return 0
     response = extract_characters(response)
-    gt = extract_characters(gt)
     if response == None:
         return 0
     else: return response.lower()==gt.lower()
-
 def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps=1) -> Tuple[str, bool]:
     video_path = example["video_path"]
     question   = example["question"]
-    options    = example["options"]
-    opt_str=""
-    for cha,opt in options.items():
-        opt_str=opt_str+f"{cha}. {opt}\n"
     gt         = str(example["answer"]).strip()
+    options    = example["options"]
     if mode == "uniform":
         vr, fps = video_io.load_video(video_path)
         idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-        frames = video_io.save_video_frames(video_path, idxs, "frames/vcrbench")
+        frames = video_io.save_video_frames(video_path, idxs,"frames/mlvu")
         imgs, _ = zip(*frames)
-        prompt = build_prompt(question,mode,opt_str,False,False) 
+        prompt = build_prompt(question, mode, options,False,False) 
         message=construct_message(prompt,list(imgs))
         response, _ = model.chat(message)
         pred = response.strip()
         return pred, prompt, message, eval_gt(pred, gt), 1
-
-    # step 模式
-    
     history = []
     history_frames = []
     step_idx=0
     while True:
         if step_idx == 0 or not history_frames:
-            prompt = build_prompt(question, mode, opt_str,True,False) 
+            prompt = build_prompt(question, mode, options,True,False) 
             vr, fps = video_io.load_video(video_path)
             idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-            frames = video_io.save_video_frames(video_path, idxs, "frames/vcrbench")
+            frames = video_io.save_video_frames(video_path, idxs, "frames/mlvu")
         elif step_idx == 2:
-            prompt = build_prompt(question, mode,opt_str,False,True)
+            prompt = build_prompt(question, mode, options,False,True)
         else:
-            prompt = build_prompt(question, mode,opt_str,False,False)
+            prompt = build_prompt(question, mode, options,False,False)
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
         response, history = model.chat(message,history=history)
+
+        # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
             if replay_idxs:
-                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/vcrbench")
+                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/mlvu")
             else:break
         else: break
         step_idx=step_idx+1
         if step_idx>=max_steps:break
+
     pred = response.strip()
     return pred, prompt, history, eval_gt(pred, gt), step_idx+1
-
-def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
+def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int)  -> dict:
     return {
-        "question_id": ex["question_id"],
-        "video_path": ex["video_path"],
+        "question_id": ex['question_id'],
+        "video": ex["video_path"],
+        "duration": ex.get("duration"),   
         "question": ex["question"],
         "prompt": prompt,
         "messages": messages,
+        "task": ex["task"],
         "gt": str(ex["answer"]),
         "pred": pred,
         "correct": correct,
-        "task": ex["task"],
         "rounds": rounds
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
@@ -246,6 +214,7 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
         "avg_rounds": avg_rounds,
         "avg_frames": avg_frm,
     }
+
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 

@@ -19,7 +19,7 @@ Please answer the question with an optoin letter.
 The answer is:
 """
 VIDEO_DIR  = "VRBench/v001_360p_zips/videos/v001_360p"
-QA_FNAME   = "/VRBench/VRBench_eval.jsonl"   
+QA_FNAME   = "VRBench/VRBench_eval.jsonl"   
 def get_paths() -> List[Tuple[str, str]]:
     """
     返回 (qa_path, video_root_path)
@@ -36,7 +36,7 @@ def load_data() -> list[dict]:
         qa_data=item['mcq']
         for i,qa in qa_data.items():
             out.append({
-                "Question ID": index,
+                "question_id": index,
                 "video_id": video_id,           
                 "video_path": f"{VIDEO_DIR}/{video_id}.mp4",
                 "task": qa["reasoning_type"],
@@ -66,6 +66,11 @@ def build_prompt(question: str, mode: str, options: str, init_flag: bool,final_f
         )
         else:
             return Prompt_temp_round_mc.format(
+            question=question,
+            options=options,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
             question=question,
             options=options,
         )
@@ -116,7 +121,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         message=construct_message(prompt,list(imgs))
         response, _ = model.chat(message)
         pred = response.strip()
-        return pred, prompt, message, eval_gt(pred, gt)
+        return pred, prompt, message, eval_gt(pred, gt),1
 
     # step 模式
     
@@ -136,7 +141,9 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
+
         response, history = model.chat(message,history=history)
+
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
@@ -147,14 +154,11 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         step_idx=step_idx+1
         if step_idx>=max_steps:break
     pred = response.strip()
-    return pred, prompt, history, eval_gt(pred, gt)
+    return pred, prompt, history, eval_gt(pred, gt), step_idx+1
 
-def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
-    """
-    构造需要保存的字段，benchmark 可自由增删
-    """
+def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
     return {
-        "Question ID": ex["Question ID"],
+        "question_id": ex["question_id"],
         "video_path": ex["video_path"],
         "question": ex["question"],
         "prompt": prompt,
@@ -163,11 +167,9 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
         "pred": pred,
         "correct": correct,
         "task": ex["task"],
+        "rounds": rounds
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
-    """
-    读取 results_all.jsonl，按 task 分组统计准确率与样本数
-    """
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
@@ -182,8 +184,6 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     bad_counts={}
     total = len(all_results)
     overall_acc = float(np.mean([r["correct"] for r in all_results]))
-
-    # 按 task 分组
     task_buckets: Dict[str, List[Dict[str, Any]]] = {}
     no_response=0
     for r in all_results:
@@ -203,16 +203,18 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     for task, items in task_buckets.items():
         task_accuracy[task] = float(np.mean([r["correct"] for r in items])) if items else 0.0
         task_samples[task] = len(items)
-
+    rounds_vals = [int(r['rounds']) for r in all_results if r.get('rounds') is not None]
+    avg_rounds = sum(rounds_vals) / len(rounds_vals) if rounds_vals else None
+    avg_frm=avg_input_frames(all_results)
     summary = {
         "overall_accuracy": overall_acc,
         "total_samples": total,
         "bad_counts": bad_counts,
         "task_accuracy": task_accuracy,
         "task_total_samples": task_samples,
+        "avg_rounds": avg_rounds,
+        "avg_frames": avg_frm,
     }
-
-    # 落盘
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 

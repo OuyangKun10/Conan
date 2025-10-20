@@ -15,33 +15,25 @@ from prompt_temp import *
 QA_FNAME   = "Video-MME/videomme/test-00000-of-00001.parquet"
 VIDEO_DIR  = "Video-MME/data"   
 PROMPT_TEMP=""""
-{question}
-{options}
+Question: {question}
+Options: {options}
 Please answer the question with an optoin letter.
 The answer is:
 """
 def get_paths() -> Tuple[str, str]:
     return  QA_FNAME, VIDEO_DIR
 def load_data() -> list[dict]:
-    """
-    统一字段后返回任务列表
-    字段:
-        video_name  : str   原始文件名
-        video_path  : str   完整绝对路径
-        question    : str
-        answer      : str   ground truth
-        duration    : float 秒(可选)
-    """
     qa_path, video_dir = get_paths()
     raw = load_qa(qa_path)     
     out = []
-    for item in raw:
+    for idx,item in enumerate(raw):
         video_id=item["videoID"]
         out.append({
+            "question_id": idx,
             "video_name": video_id,           
             "video_path": os.path.join(video_dir, f"{video_id}.mp4"),
             "question":   item["question"],
-            "options":    item["options"],
+            "options":    ', '.join(item["options"]),
             "answer":     str(item["answer"]),
             "duration":   item.get("duration")
         })
@@ -66,6 +58,11 @@ def build_prompt(question: str, mode: str, options: List[str], init_flag: bool,f
         )
         else:
             return Prompt_temp_round_mc.format(
+            question=question,
+            options=options,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
             question=question,
             options=options,
         )
@@ -111,10 +108,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         message=construct_message(prompt,list(imgs))
         response, _ = model.chat(message)
         pred = response.strip()
-        return pred, prompt, message, eval_gt(pred, gt)
-
-    # step 模式
-    
+        return pred, prompt, message, eval_gt(pred, gt), 1
     history = []
     history_frames = []
     step_idx=0
@@ -132,8 +126,6 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
         response, history = model.chat(message,history=history)
-
-        # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
@@ -145,12 +137,10 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         if step_idx>=max_steps:break
 
     pred = response.strip()
-    return pred, prompt, history, eval_gt(pred, gt)
-def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
-    """
-    构造需要保存的字段，benchmark 可自由增删
-    """
+    return pred, prompt, history, eval_gt(pred, gt), step_idx+1
+def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
     return {
+        "question_id": ex["question_id"],
         "video": ex["video_path"],
         "duration": ex.get("duration"),   
         "question": ex["question"],
@@ -158,16 +148,10 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
         "messages": messages,
         "gt": str(ex["answer"]),
         "pred": pred,
-        "correct": correct
+        "correct": correct,
+        "rounds": rounds
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
-    """
-    读取所有 results_all.jsonl 并返回统计字典
-    结构：
-        overall_accuracy
-        total_samples
-        bucket_accuracy
-    """
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
@@ -200,15 +184,17 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     bad_counts={"inference error":len(failed_res),"retrieval error":no_response}
     bucket_acc = {k: (np.mean([r["correct"] for r in v]) if v else None)
                   for k, v in buckets.items()}
-
+    rounds_vals = [int(r['rounds']) for r in all_results if r.get('rounds') is not None]
+    avg_rounds = sum(rounds_vals) / len(rounds_vals) if rounds_vals else None
+    avg_frm=avg_input_frames(all_results)
     summary = {
         "overall_accuracy": float(overall_acc),
         "total_samples": total,
         "bad_counts": bad_counts,
-        "bucket_accuracy": bucket_acc
+        "bucket_accuracy": bucket_acc,
+        "avg_rounds": avg_rounds,
+        "avg_frames": avg_frm,
     }
-
-    # 同时保存 summary.json
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 

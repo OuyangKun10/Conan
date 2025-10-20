@@ -68,3 +68,20 @@ TYPE_TEMPLATE = {
     "free-form": "text answer",
     "regression": "the numerical value (e.g., 42 or 3.14)",
     }
+Prompt_temp_cot_mc="""
+    Question: {question}
+    Options: {options}
+    Please think about this question as if you were a human pondering deeply.
+    Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions
+    It's encouraged to include self-reflection or verification in the reasoning process.
+    Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags.
+    Please provide only the single option letter (e.g., A, B, C, D, etc.) within the <answer> </answer> tags.
+"""
+Prompt_temp_cot_gen="""
+    Question: {question}
+    Please think about this question as if you were a human pondering deeply.
+    Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions
+    It's encouraged to include self-reflection or verification in the reasoning process.
+    Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags.
+    First output the thinking process in <think> </think> tags and then output the answer in <answer> </answer> tags.
+"""
