@@ -14,58 +14,16 @@ from prompt_temp import *
 # ========== 1. 路径配置 ==========
 QA_FNAME   = "Video-Holmes/test_Video-Holmes.json"
 VIDEO_DIR  = "Video-Holmes/videos"   
-ANALYZE_PROMPT ="""
-[[INSTRUCTIONS]]
-Please select the best answer to the following multiple-choice question based on the video. 
-Only one option is the most accurate answer in relation to the question and the video.
-Each frame is labeled with a timestamp in the format HH:MM:SS.
-
-What is the correct answer to this question [[QUESTION]]
-Options:
-[[OPTIONS]]
-
-[[END OF INSTRUCTIONS]]
-[[QUESTION]]
-{question}
-[[END OF QUESTION]]
-[[OPTIONS]]
-{options}
-[[END OF OPTIONS]]
-[[OUTPUT FORMAT]]
-
-Task:
-
-1. Decide whether the **provided frames contain enough information** to answer the question.
-2. Output **exactly** in the following XML-like tags:\n<replay>True/False</replay>\n<clip>…</clip>\n<answer>…</answer>
-
-Rules:
-
-• If the frames are sufficient → set <replay>False</replay>, leave <clip></clip> empty, and place the correct **option letter** inside <answer></answer>.
-• If the frames are **not** sufficient → set <replay>True</replay>, list the required clip(s) inside <clip></clip> (e.g., 00:05:20-00:06:30).
-Do **not** add any extra text outside these tags.
+PROMPT_TEMP_REASONING="""
+Based on the given video, reason and answer the single-choice question. 
+Provide your reasoning between the <think> and </think> tags, and then give your final answer between the <answer> and </answer> tags. 
+The question is: {question}. The options are: {options}. Your answer:"
 """
-
-PROMPT_TEMP = """
-[[INSTRUCTIONS]]
-Please select the best answer to the following multiple-choice question based on the video. 
-Only one option is the most accurate answer in relation to the question and the video.
-
-What is the correct answer to this question [[QUESTION]]
-Options:
-[[OPTIONS]]
-
-[[END OF INSTRUCTIONS]]
-[[QUESTION]]
-{question}
-[[END OF QUESTION]]
-[[OPTIONS]]
-{options}
-[[END OF OPTIONS]]
-[[OUTPUT FORMAT]]
-Format your answer as follows:
-
-Give the final correct option letter in the following format: A, B, C, D, E, F, etc.
-[[END OF OUTPUT FORMAT]]
+PROMPT_TEMP =""""
+Question: {question}
+Options: {options}
+Please answer the question with an optoin letter.
+The answer is:
 """
 def get_paths() -> Tuple[str, str]:
     """
@@ -80,7 +38,7 @@ def load_data() -> list[dict]:
     for item in raw:
         video_id=item["video ID"]
         out.append({
-            "Question ID": item["Question ID"],
+            "question_id": item["Question ID"],
             "video_id": video_id,           
             "video_path": os.path.join(video_dir, f"{video_id}.mp4"),
             "task": item["Question Type"],
@@ -110,6 +68,11 @@ def build_prompt(question: str, mode: str, options: List[str], init_flag: bool,f
         )
         else:
             return Prompt_temp_round_mc.format(
+            question=question,
+            options=options,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
             question=question,
             options=options,
         )
@@ -156,10 +119,7 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         message=construct_message(prompt,list(imgs))
         response, _ = model.chat(message)
         pred = response.strip()
-        return pred, prompt, message, eval_gt(pred, gt)
-
-    # step 模式
-    
+        return pred, prompt, message, eval_gt(pred, gt), 1
     history = []
     history_frames = []
     step_idx=0
@@ -189,13 +149,10 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         
 
     pred = response.strip()
-    return pred, prompt, history, eval_gt(pred, gt)
-def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
-    """
-    构造需要保存的字段，benchmark 可自由增删
-    """
+    return pred, prompt, history, eval_gt(pred, gt), step_idx+1
+def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
     return {
-        "Question ID": ex["Question ID"],
+        "question_id": ex["question_id"],
         "video_path": ex["video_path"],
         "question": ex["question"],
         "options": ex["options"],
@@ -205,11 +162,9 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
         "pred": pred,
         "correct": correct,
         "task": ex["task"],
+        "rounds": rounds
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
-    """
-    读取 results_all.jsonl，按 task 分组统计准确率与样本数
-    """
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
@@ -224,7 +179,6 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     bad_counts={}
     total = len(all_results)
     overall_acc = float(np.mean([r["correct"] for r in all_results]))
-
     task_buckets: Dict[str, List[Dict[str, Any]]] = {}
     no_response=0
     for r in all_results:
@@ -244,13 +198,17 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     for task, items in task_buckets.items():
         task_accuracy[task] = float(np.mean([r["correct"] for r in items])) if items else 0.0
         task_samples[task] = len(items)
-
+    rounds_vals = [int(r['rounds']) for r in all_results if r.get('rounds') is not None]
+    avg_rounds = sum(rounds_vals) / len(rounds_vals) if rounds_vals else None
+    avg_frm=avg_input_frames(all_results)
     summary = {
         "overall_accuracy": overall_acc,
         "total_samples": total,
         "bad_counts": bad_counts,
         "task_accuracy": task_accuracy,
         "task_total_samples": task_samples,
+        "avg_rounds": avg_rounds,
+        "avg_frames": avg_frm,
     }
 
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:

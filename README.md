@@ -1,20 +1,45 @@
-# ⚔️ Conan
+# <div style="text-align: center;"><img src="./figure/logo.png" width="60" height="60" /> </div>
+# Conan: Progressive Learning to Reason Like a Detective over Multi-Scale Visual Evidence  
 
-The multi-step reasoning MLLM that turns frames into foresight.
+📅 Breaking News
 
-## 📅 Breaking News
+🚀 10/20/2025 — We release [Conan-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B), and evaluation toolkit [Conan-Eval](./Conan-Eval/)!
 
-🚀 10/02/2025 — We releae the evaluation results of [Conan](https://huggingface.co/RUBBISHLIKE/Conan) (2000 iters).
+🚀 09/30/2025 — [Conan-SFT-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B-SFT) has landed on Hugging Face!
 
-🚀 09/30/2025 — [Conan-SFT](https://huggingface.co/RUBBISHLIKE/Conan-SFT) has landed on Hugging Face!
+# Conan
+An MLLM empowered by Conan-like reasoning capabilities: 1. Identify multi-scale frames. 2. Reason over cross-frame clues. 3. Decide plausible actions.
 
-## 🔥 Arena Scores
+🏆 Performance Comparison on Multi-step reasoning
+<img src="./figure/multi_step_reasoning_performance.png"/>
 
-| Dataset       | Qwen2.5VL7B | Conan-SFT | **Conan (2000 iters)** | Δ vs Qwen2.5VL7B | Δ vs Conan-SFT |
-|---------------|-------------|-----------|------------------------|------------------|----------------|
-| MMR-VBench    | 30.1        | 34.4      | **43.3**               | **+13.2**        | **+8.9**       |
-| VideoHolmes   | 28.5        | 36.0      | **44.4**               | **+15.9**        | **+8.4**       |
-| VRBench       | 66.4        | 64.6      | **78.9**               | **+12.5**        | **+14.3**      |
-| VCRBench (MC) | 46.5        | 46.9      | **50.2**               | **+3.7**         | **+3.3**       |
-| VideoMMMU     | 45.7        | 46.6      | **48.6**               | **+2.9**         | **+2.0**       |
+🏆 Performance Comparison on Long-Video Understanding
 
+<img src="./figure/longvideo_performance.png"/>
+
+## 🏋️ Training (Coming Soon)
+
+Full training pipeline will be released on 2025.11.15, including:
+Conan-91k Dataset: 60K SFT + 31K RLVR samples,
+Multi-Stage Cold-Start Strategy,
+Joint Identification–Reasoning–Action RLVR
+
+## Evaluation
+
+**Conan-Eval**
+
+**Setup**
+
+1.  **Environment:** Python 3.8+.
+2.  **Install Libraries:**
+    ```bash
+    pip install torch pandas numpy pillow accelerate transformers sentencepiece decord flash-attn --no-build-isolation
+    ```
+3.  **Multi-step reasoning benchmarks:** [MMR-V](https://mmr-v.github.io/home_page.html), [Video-Holmes](https://video-holmes.github.io/Page.github.io/), [VRBench](https://vrbench.github.io), [VCRBench](https://vlm-reasoning.github.io/VCR-Bench/), [LongVideoReason](https://huggingface.co/LongVideo-Reason), [HumanPCR](https://huggingface.co/datasets/HumanPCR/HumanPCR).
+
+**Long-video understanding benchmarks:** [LongVideoBench](https://longvideobench.github.io), [MLVU](https://github.com/JUNJIE99/MLVU), [LVBench](https://lvbench.github.io), [Video-MME](https://video-mme.github.io/home_page.html).
+
+**Usage**
+    ```bash
+    bash run.sh
+    ```

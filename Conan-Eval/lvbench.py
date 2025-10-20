@@ -1,5 +1,5 @@
 """
-vrbench.py 
+lvbench.py 
 """
 import os
 import re
@@ -10,102 +10,95 @@ from pathlib import Path
 from typing import List, Dict, Any
 import numpy as np
 from utils import *
-from prompt_temp import *
 # ========== 1. 路径配置 ==========
-PROMPT_TEMP_mc=""""
-Question:\n{question}
-Options:\n{options}
+QA_FNAME   = "LVBench/LVBench/data/video_info.meta.jsonl"
+VIDEO_DIR  = "LVBench/all_videos"   
+PROMPT_TEMP=""""
+Question: {question}
 Please answer the question with an optoin letter.
 The answer is:
 """
-PROMPT_TEMP_free=""""
-Question:\n{question}
-The answer is:
+Prompt_temp_init_mc="""
+You are given a single-choice question, options, and several video frames with their timestamps.
+For each frame/clip, assign a relevance score on a scale of 1 to 5 (where 5 = highly relevant, 3 = medium relevant and 1 = not relevant), and include the medium or high scoring clip(s) within <score></score>.
+And you should perform step-by-step reasoning before making final action.
+Guidelines for reasoning:
+1. Begin by analyzing the question, clarifying what kind of evidence is required.
+2. Analyze the relevant frames with high scores that help answer the question.
+3. Compare the available evidence across frames, giving a summary.
+4. Justify whether the available information is sufficient to answer accurately.
+Action:
+If not, you should retrieve additional clip(s) and specify them in <clip></clip>, e.g., <score>the scores corresponding to the clips</score><think>your reasoning process</think><clip>00:00:05-00:00:10</clip><answer></answer>.
+If yes, you should answer the question with an option letter in <answer></answer>, e.g., <score>the scores corresponding to the clips</score><think>your reasoning process</think><clip></clip><answer>C</answer>.
+
+Output format:
+<score>...</score><think>...</think><clip>...</clip><answer>...</answer> 
+Question: {question}
 """
-VIDEO_DIR  = "VCR-Bench/v1/videos"
-QA_FNAME   = "VCR-Bench/v1/videos/meta_info_video.json"   
-def get_paths() -> List[Tuple[str, str]]:
-    """
-    返回 (qa_path, video_root_path)
-    """
-    
-    return  VIDEO_DIR,QA_FNAME
+Prompt_temp_round_mc="""
+Please identify the new frame scores, perform step-by-step reasoning, and make final action based on the history and new information.
+Output format:
+<score>...</score><think>...</think><clip>...</clip><answer>...</answer> 
+Question: {question}
+"""
+Prompt_temp_final_mc="""
+Please identify the new frame scores, perform step-by-step reasoning, and answer the question based on the history and new information.
+You should output an option letter in <answer></answer> tag.
+Output format:
+<score>...</score><think>...</think><clip>...</clip><answer>...</answer> 
+Question: {question}
+"""
+Prompt_temp_cot_mc="""
+    Question: {question}
+    Please think about this question as if you were a human pondering deeply.
+    Engage in an internal dialogue using expressions such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions
+    It's encouraged to include self-reflection or verification in the reasoning process.
+    Provide your detailed reasoning between the <think> </think> tags, and then give your final answer between the <answer> </answer> tags.
+    Please provide only the single option letter (e.g., A, B, C, D, etc.) within the <answer> </answer> tags.
+"""
+def get_paths() -> Tuple[str, str]:
+    return  QA_FNAME, VIDEO_DIR
 def load_data() -> list[dict]:
-    VIDEO_DIR,QA_FNAME= get_paths()
+    qa_path, video_dir = get_paths()
+    raw = load_qa(qa_path)     
     out = []
-    raw = load_qa(QA_FNAME)   
     for item in raw:
-        video_id=os.path.basename(item["video_path"])
-        video_path=item["video_path"]
-        if item["multiple-choice"]:
+        video_id=item["key"]
+        qa_list=item['qa']
+        for qa in qa_list:
             out.append({
-                "question_id": item['id'],
-                "video_id": video_id,           
-                "video_path": f"{VIDEO_DIR}/{video_path}",
-                "task": item["dimension"],
-                "question_type": "multiple-choice" if item["multiple-choice"] else "free-form",
-                "question": item["question"],
-                "options": item["choices"],
-                "answer": item["answer"],
-                "duration": item["duration"]
+                "question_id": qa['uid'],
+                "video_name": video_id,           
+                "video_path": os.path.join(video_dir, f"{video_id}.mp4"),
+                "question":   qa["question"],
+                "answer":     qa['answer'],
+                "task":       qa['question_type'],
+                "time_reference":   qa.get("time_reference")
             })
     return out
 # ========== 2. prompt & 单条评测 ==========
-def build_prompt(question: str, mode: str, options: str, init_flag: bool, final_flag: bool) -> str:
+def build_prompt(question: str, mode: str, init_flag: bool,final_flag: bool) -> str:
     if mode == "uniform":
-        if options:
-            return PROMPT_TEMP_mc.format(
-                question=question,
-                options=options,
-            )
-        else:
-            return PROMPT_TEMP_free.format(
-                question=question,
-            )
-
+        return PROMPT_TEMP.format(
+            question=question,
+        )
     elif mode == "step":
         if init_flag:
-            if options:
-                return Prompt_temp_init_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_init_gen.format(
-                question=question,
-                )
-
-        elif final_flag:
-            if options:
-                return Prompt_temp_final_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_final_gen.format(
-                question=question,
-                )
-        else:
-            if options:
-                return Prompt_temp_round_mc.format(
-                question=question,
-                options=options,
-                )
-            else:
-                return Prompt_temp_round_gen.format(
-                question=question,
-                )
-    elif mode == "cot":
-        if options:
-            return Prompt_temp_cot_mc.format(
+            return Prompt_temp_init_mc.format(
             question=question,
-            options=options,
+        )
+        elif final_flag:
+            return Prompt_temp_final_mc.format(
+            question=question,
         )
         else:
-            return Prompt_temp_cot_gen.format(
-                question=question,
-            )
-        
+            return Prompt_temp_round_mc.format(
+            question=question,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
+            question=question,
+        )
 def construct_message(prompt,frames,timestamps=[],insert_timestamp=False):
     content=[]
     if insert_timestamp:
@@ -131,75 +124,85 @@ def eval_gt(response,gt):
     if response == None:
         return 0
     response = extract_characters(response)
-    gt = extract_characters(gt)
     if response == None:
         return 0
     else: return response.lower()==gt.lower()
-
 def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps=1) -> Tuple[str, bool]:
     video_path = example["video_path"]
     question   = example["question"]
-    options    = example["options"]
-    opt_str=""
-    for cha,opt in options.items():
-        opt_str=opt_str+f"{cha}. {opt}\n"
     gt         = str(example["answer"]).strip()
     if mode == "uniform":
         vr, fps = video_io.load_video(video_path)
         idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-        frames = video_io.save_video_frames(video_path, idxs, "frames/vcrbench")
+        frames = video_io.save_video_frames(video_path, idxs,"frames/lvbench")
         imgs, _ = zip(*frames)
-        prompt = build_prompt(question,mode,opt_str,False,False) 
+        prompt = build_prompt(question, mode, False,False) 
         message=construct_message(prompt,list(imgs))
         response, _ = model.chat(message)
         pred = response.strip()
-        return pred, prompt, message, eval_gt(pred, gt), 1
+        return pred, prompt, message, eval_gt(pred, gt),1
 
-    # step 模式
-    
     history = []
     history_frames = []
     step_idx=0
     while True:
         if step_idx == 0 or not history_frames:
-            prompt = build_prompt(question, mode, opt_str,True,False) 
+            prompt = build_prompt(question, mode, True,False) 
             vr, fps = video_io.load_video(video_path)
             idxs = video_io.uniform_sample_idx(len(vr), max_frames)
-            frames = video_io.save_video_frames(video_path, idxs, "frames/vcrbench")
+            frames = video_io.save_video_frames(video_path, idxs, "frames/lvbench")
         elif step_idx == 2:
-            prompt = build_prompt(question, mode,opt_str,False,True)
+            prompt = build_prompt(question, mode, False,True)
         else:
-            prompt = build_prompt(question, mode,opt_str,False,False)
+            prompt = build_prompt(question, mode, False,False)
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
         response, history = model.chat(message,history=history)
+
+        # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
             if replay_idxs:
-                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/vcrbench")
+                frames = video_io.save_video_frames(video_path, replay_idxs, "frames/lvbench")
             else:break
         else: break
         step_idx=step_idx+1
         if step_idx>=max_steps:break
-    pred = response.strip()
-    return pred, prompt, history, eval_gt(pred, gt), step_idx+1
 
+    pred = response.strip()
+    return pred, prompt, history, eval_gt(pred, gt),step_idx+1
 def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
     return {
         "question_id": ex["question_id"],
-        "video_path": ex["video_path"],
+        "video": ex["video_path"],
+        "time_reference": ex.get("time_reference"),   
         "question": ex["question"],
         "prompt": prompt,
         "messages": messages,
+        "task": ex["task"],
         "gt": str(ex["answer"]),
         "pred": pred,
         "correct": correct,
-        "task": ex["task"],
-        "rounds": rounds
+        "rounds":rounds
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
+    """
+    读取所有 results_all.jsonl 并返回统计字典
+    结构：
+        overall_accuracy
+        total_samples
+        bucket_accuracy
+    """
+    task_type=[
+    "entity recognition",
+    "event understanding",
+    "key information retrieval",
+    "temporal grounding",
+    "reasoning",
+    "summarization"
+]
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
@@ -226,8 +229,9 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
             response = extract_characters(response)
             if response is None:
                 no_response=no_response+1
-        task = r.get("task", "unknown_task")
-        task_buckets.setdefault(task, []).append(r)
+        task_list = r.get("task", "unknown_task")
+        for task in task_list:
+            task_buckets.setdefault(task, []).append(r)
     bad_counts={"inference error":len(failed_res),"retrieval error":no_response}
     task_accuracy: Dict[str, float] = {}
     task_samples: Dict[str, int] = {}
@@ -246,6 +250,7 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
         "avg_rounds": avg_rounds,
         "avg_frames": avg_frm,
     }
+
     with open(run_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 

@@ -36,39 +36,31 @@ Format your answer as follows:
 Give the final correct option number in the following format: \"[[A]]\" or \"[[B]]\" or \"[[C]]\" or \"[[D]]\" ...
 [[END OF OUTPUT FORMAT]]
 """
+PROMPT_TEMP_other=""""
+Question: {question}
+Options: {options}
+Please answer the question with an optoin letter.
+The answer is:
+"""
 def get_paths() -> Tuple[str, str]:
-    """
-    返回 (qa_path, video_root_path)
-    方便其它 benchmark 复用 main.py
-    """
     return  QA_FNAME, VIDEO_DIR
-# 放在 videomme.py 末尾即可
 def load_data() -> list[dict]:
-    """
-    统一字段后返回任务列表
-    字段:
-        video_name  : str   原始文件名
-        video_path  : str   完整绝对路径
-        question    : str
-        answer      : str   ground truth
-        duration    : float 秒(可选)
-    """
     qa_path, video_dir = get_paths()
     raw = load_qa(qa_path)     
     out = []
-    for item in raw:
+    for idx,item in enumerate(raw):
         video_id=item["video"]
         out.append({
             "video_id": video_id,           
             "video_path": os.path.join(video_dir, video_id),
             "videoType": item["videoType"],
             "question":   item["question"],
-            "options":    item["options"],
+            "options":    ', '.join(item["options"]),
             "answer":     str(item["correctAnswer"]),
             "duration":   item.get("duration"),
             "abilityType_L2": item["abilityType_L2"],
             "abilityType_L3": item["abilityType_L3"],
-            "question_idx": item["question_idx"]
+            "question_id": item["question_idx"]
         })
     return out
 # ========== 2. prompt & 单条评测 ==========
@@ -78,6 +70,7 @@ def build_prompt(question: str, mode: str, options: List[str], init_flag: bool,f
             question=question,
             options=options,
         )
+        #please replace PROMPT_TEMP with PROMPT_TEMP_other when evaluating KimiVL, MiMo-VL
     elif mode == "step":
         if init_flag:
             return Prompt_temp_init_mc.format(
@@ -91,6 +84,11 @@ def build_prompt(question: str, mode: str, options: List[str], init_flag: bool,f
         )
         else:
             return Prompt_temp_round_mc.format(
+            question=question,
+            options=options,
+        )
+    elif mode == "cot":
+        return Prompt_temp_cot_mc.format(
             question=question,
             options=options,
         )
@@ -135,11 +133,12 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         imgs, _ = zip(*frames)
         prompt = build_prompt(question, mode, options,False,False) 
         message=construct_message(prompt,list(imgs))
-        response, _ = model.chat(message)
-        pred = response.strip()
-        return pred, prompt, message, eval_gt(pred, gt)
 
-    # step 模式
+        response, _ = model.chat(message)
+
+        pred = response.strip()
+        return pred, prompt, message, eval_gt(pred, gt),1
+
     
     history = []
     history_frames = []
@@ -157,15 +156,11 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         imgs, ts = zip(*frames)
         history_frames = history_frames+list(ts)
         message=construct_message(prompt,list(imgs),ts,True)
-        # try:
         response, history = model.chat(message,history=history)
-        # except:
-        #     response="None"
-        #     break
-        # replay 逻辑
         m,timestamps = identify_replay(response)
         if m:
             replay_idxs = clips_to_frame_indices(video_path, timestamps, 8, history_frames)
+
             if replay_idxs:
                 frames = video_io.save_video_frames(video_path, replay_idxs, "frames/mmr-v")
             else:break
@@ -173,12 +168,10 @@ def evaluate_example(model, example: dict, mode: str, max_frames: int, max_steps
         step_idx=step_idx+1
         if step_idx>=max_steps:break
     pred = response.strip()
-    return pred, prompt, history, eval_gt(pred, gt)
-def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool) -> dict:
-    """
-    构造需要保存的字段，benchmark 可自由增删
-    """
+    return pred, prompt, history, eval_gt(pred, gt),step_idx+1
+def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, correct: bool, rounds: int) -> dict:
     return {
+        "question_id": ex["question_id"],
         "video": ex["video_path"],
         "question": ex["question"],
         "prompt": prompt,
@@ -186,17 +179,11 @@ def make_result_record(ex: dict, prompt: str, messages: List[dict], pred: str, c
         "gt": str(ex["answer"]),
         "pred": pred,
         "correct": correct,
+        "rounds": rounds,
         "abilityType_L2": ex["abilityType_L2"],
         "abilityType_L3": ex["abilityType_L3"],
     }
 def result_statistics(run_dir: Path) -> Dict[str, Any]:
-    """
-    读取所有 results_all.jsonl 并返回统计字典
-    结构：
-        overall_accuracy
-        total_samples
-        bucket_accuracy
-    """
     all_results = []
     with open(run_dir / "results_all.jsonl", encoding="utf-8") as f:
         for line in f:
@@ -210,7 +197,8 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     except:
         print("No generation failed samples")
     total = len(all_results)
-    # 按 reasoning type 分组
+    rounds_vals = [int(r['rounds']) for r in all_results if r.get('rounds') is not None]
+    avg_rounds = sum(rounds_vals) / len(rounds_vals) if rounds_vals else None
     implicit_buckets = {"Metaphor Understanding": [], "Theme Understanding": [], "Emotion Recognition": [], "Comment Matching": [], "Implicit Symbol": []}
     explicit_buckets = {"Causal Reasoning": [], "Sequential Structure Reasoning": [], "Counterintuitive Reasoning": [], "Cross-modal Creative Transfer": [], "Video Type and Intent": []}
     unknown_bucket: List[Dict[str, Any]] = [] 
@@ -231,7 +219,6 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
             explicit_buckets[rea_type].append(r)
     bad_counts={"inference error":len(failed_res),"retrieval error":no_response}
     overall_acc = np.mean([r["correct"] for r in all_results])
-    # 1. 计算每个子类型的准确率
     implicit_subtype_accuracy: Dict[str, float] = {}
     for k, v in implicit_buckets.items():
         if v:
@@ -255,12 +242,15 @@ def result_statistics(run_dir: Path) -> Dict[str, Any]:
     explicit_category_samples = len(explicit_all_results)
     explicit_subtype_accuracy["overall"]=explicit_category_accuracy
     explicit_subtype_accuracy["total_samples"]=explicit_category_samples
+    avg_frm=avg_input_frames(all_results)
     summary = {
         "overall_accuracy": float(overall_acc),
         "total_samples": total,
         "bad_counts": bad_counts,
         "implicit_subtype_accuracy": implicit_subtype_accuracy,
         "explicit_subtype_accuracy": explicit_subtype_accuracy,
+        "avg_rounds": avg_rounds,
+        "avg_frames": avg_frm,
     }
 
     # 同时保存 summary.json
