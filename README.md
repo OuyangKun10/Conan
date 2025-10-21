@@ -1,21 +1,17 @@
 # <div style="text-align: center;"><img src="./figure/logo.png" width="60" height="60" /> </div>
 # Conan: Progressive Learning to Reason Like a Detective over Multi-Scale Visual Evidence  
 
-📅 Breaking News
+# 🔥 Updates
 
 🚀 10/20/2025 — We release [Conan-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B), and evaluation toolkit [Conan-Eval](./Conan-Eval/)!
 
 🚀 09/30/2025 — [Conan-SFT-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B-SFT) has landed on Hugging Face!
 
-# Conan
+# Introduction
 An MLLM empowered by Conan-like reasoning capabilities: 1. Identify multi-scale frames. 2. Reason over cross-frame clues. 3. Decide plausible actions.
 
-🏆 Performance Comparison on Multi-step reasoning
-<img src="./figure/multi_step_reasoning_performance.png"/>
-
-🏆 Performance Comparison on Long-Video Understanding
-
-<img src="./figure/longvideo_performance.png"/>
+## 🏆 Performance Highlights
+<img src="./figure/teaser.png"/>
 
 ## 🏋️ Training (Coming Soon)
 
