@@ -22,8 +22,8 @@ Here's a glimpse of Conan's impressive capabilities:
 - Clone the Repository:
 
 ```
-git clone https://github.com/MCG-NJU/StreamForest.git
-cd StreamForest
+git clone https://github.com/OuyangKun10/Conan.git
+cd Conan
 ```
 
 - Create and Activate Environment:
