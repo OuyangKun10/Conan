@@ -3,6 +3,8 @@
 
 ## 🔥 Updates
 
+🚀 **October 25, 2025** — We the training framework of [Conan](./ms-swift/)!
+
 🚀 **October 20, 2025** — We are excited to release [Conan-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B) and its accompanying evaluation toolkit, [Conan-Eval](./Conan-Eval/)!
 
 🚀 **September 30, 2025** — [Conan-SFT-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B-SFT) has officially landed on Hugging Face!
