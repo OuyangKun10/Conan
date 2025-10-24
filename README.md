@@ -33,10 +33,33 @@ conda activate Conan
 ```
 - Install Dependencies:
 ```
-pip install torch pandas numpy pillow accelerate transformers sentencepiece decord flash-attn --no-build-isolation
+cd ms-swift
+```
+```
+pip install -e .
 ```
 
-## 🏋️ Training (Coming Soon)
+## 🏋️ Training
+```
+cd ms-swift/training_scripts
+```
+1. **Texual Reasoning**
+```
+bash Conan-SFT-Stage1.sh
+```
+2. **Multimodal alignment Reasoning**
+```
+bash Conan-SFT-Stage2.sh
+```
+3. **Vision-centric Reasoning**
+```
+bash Conan-SFT-Stage3.sh
+```
+4. **AIR RLVR**
+```
+bash Conan-server.sh
+bash Conan-AIR-RLVR.sh
+```
 
 The full training pipeline is scheduled for release on **November 15, 2025**. This will include:
 *   **Conan-91k Dataset:** Comprising 60K SFT samples and 31K RLVR samples.
