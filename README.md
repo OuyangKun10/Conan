@@ -5,6 +5,8 @@
 
 🚀 **November 17, 2025** — We release the [Conan-91k](https://huggingface.co/RUBBISHLIKE/Conan-91k) dataset!
 
+🚀 **October 25, 2025** — We release the training framework of [Conan](./ms-swift/)!
+
 🚀 **October 23, 2025** — We release the [paper](https://arxiv.org/abs/2510.20470)!
 
 🚀 **October 20, 2025** — We are excited to release [Conan-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B) and its accompanying evaluation toolkit, [Conan-Eval](./Conan-Eval/)!
