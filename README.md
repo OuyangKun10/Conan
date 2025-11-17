@@ -3,6 +3,10 @@
 
 ## 🔥 Updates
 
+🚀 **November 17, 2025** — We release the [Conan-91k](https://huggingface.co/RUBBISHLIKE/Conan-91k) dataset!
+
+🚀 **October 23, 2025** — We release the [paper](https://arxiv.org/abs/2510.20470)!
+
 🚀 **October 20, 2025** — We are excited to release [Conan-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B) and its accompanying evaluation toolkit, [Conan-Eval](./Conan-Eval/)!
 
 🚀 **September 30, 2025** — [Conan-SFT-7B](https://huggingface.co/RUBBISHLIKE/Conan-7B-SFT) has officially landed on Hugging Face!
@@ -60,11 +64,6 @@ bash Conan-SFT-Stage3.sh
 bash Conan-server.sh
 bash Conan-AIR-RLVR.sh
 ```
-
-The full training pipeline is scheduled for release on **November 15, 2025**. This will include:
-*   **Conan-91k Dataset:** Comprising 60K SFT samples and 31K RLVR samples.
-*   **Multi-Stage Cold-Start Strategy:** Progressively activating the reasoning capabilities.
-*   **Joint Identification–Reasoning–Action RLVR:** Encourage exploring multi-step reasoning traces.
 
 ## 📊 Evaluation
 

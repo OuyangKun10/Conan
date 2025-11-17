@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 swift sft \
     --model Conan-7B-sft-stage1 \
     --train_type full \
-    --dataset Conan-SFT-7B-Stage2.json \
+    --dataset Conan-CoT-Stage2.json \
     --torch_dtype bfloat16 \
     --num_train_epochs 1 \
     --freeze_vit true \
@@ -12,7 +12,7 @@ swift sft \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-5 \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 1 \
     --attn_impl flash_attn \
     --eval_steps 100 \
     --save_steps 1000 \

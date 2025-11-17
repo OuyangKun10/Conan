@@ -4,18 +4,18 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 swift sft \
     --model Qwen/Qwen2.5-VL-7B-Instruct \
     --train_type full \
-    --dataset Conan-SFT-7B-Stage1.json \
+    --dataset Conan-CoT-Stage1.json \
     --torch_dtype bfloat16 \
     --num_train_epochs 1 \
     --freeze_vit true \
     --freeze_aligner false \
-    --per_device_train_batch_size 8 \
-    --per_device_eval_batch_size 8 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 4 \
     --learning_rate 1e-5 \
     --gradient_accumulation_steps 1 \
     --attn_impl flash_attn \
     --eval_steps 100 \
-    --save_steps 500 \
+    --save_steps 200 \
     --save_total_limit 50 \
     --logging_steps 5 \
     --max_length 4000 \
