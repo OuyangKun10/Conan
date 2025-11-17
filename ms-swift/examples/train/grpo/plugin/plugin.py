@@ -143,7 +143,7 @@ def Clue_Action_Factor(identified_frames_score_list,new_frames_idx_list,frame_sc
         clue_acc=0.0
     if action_acc is None:
         action_acc=clue_acc
-    return clue_acc,action_acc
+    return clue_acc+action_acc
 REWARD_ORDER = re.compile(
     r'^'                                    
     r'(?:[\s\S]*?<score>(.*?)</score>)'   

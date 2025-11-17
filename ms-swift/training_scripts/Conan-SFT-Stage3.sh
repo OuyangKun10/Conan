@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 swift sft \
     --model Conan-7B-sft-stage2 \
     --train_type full \
-    --dataset Conan-SFT-7B-Stage3.json \
+    --dataset Conan-CoT-60k.json \
     --torch_dtype bfloat16 \
     --num_train_epochs 1 \
     --freeze_vit true \
