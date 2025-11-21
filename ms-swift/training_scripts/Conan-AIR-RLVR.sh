@@ -1,8 +1,7 @@
 export WANDB_PROJECT=Conan-7b
 export WANDB_API_KEY=YOUR_API_KEY
-NFRAMES=16 MAX_PIXELS=401408 VIDEO_MAX_PIXELS=401408 \
-CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 \
-NPROC_PER_NODE=7 \
+CUDA_VISIBLE_DEVICES=1,2,3,4,5,6 \
+NPROC_PER_NODE=6 \
 swift rlhf \
     --rlhf_type grpo \
     --model Conan-SFT-7B \
@@ -21,8 +20,8 @@ swift rlhf \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
     --learning_rate 1e-6 \
-    --save_steps 1000 \
-    --save_total_limit 10 \
+    --save_steps 200 \
+    --save_total_limit 100 \
     --logging_steps 5 \
     --report_to wandb \
     --output_dir output/Conan-7b \

@@ -15,7 +15,7 @@ swift sft \
     --gradient_accumulation_steps 1 \
     --attn_impl flash_attn \
     --eval_steps 100 \
-    --save_steps 200 \
+    --save_steps 500 \
     --save_total_limit 50 \
     --logging_steps 5 \
     --max_length 4000 \
