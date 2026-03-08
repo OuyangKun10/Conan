@@ -3,6 +3,8 @@
 
 ## 🔥 Updates
 
+🚀 **February 20, 2026** - Conan got accepted by CVPR 2026. 
+
 🚀 **November 17, 2025** — We release the [Conan-91k](https://huggingface.co/datasets/RUBBISHLIKE/Conan-91k) dataset!
 
 🚀 **October 25, 2025** — We release the training framework of [Conan](./ms-swift/)!
